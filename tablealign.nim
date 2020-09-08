@@ -68,18 +68,20 @@ proc olen(s: string): int =
 
 func wrapWords*(s: seq[AnsiData], maxLineWidth = 80,
                splitLongWords = true,
-               seps: set[char] = Whitespace): seq[string] =
-  var temp: string
-  var spaceLeft = maxLineWidth
-  var lastSep = ""
+               seps: set[char] = Whitespace): seq[seq[AnsiData]] =
+  const endElem =
+    AnsiData(kind: CSI, parameters: "0", intermediate: "", final: 'm')
   var
-    csi: string
-    passedCsi: string
+    temp: seq[AnsiData]
+    spaceLeft = maxLineWidth
+    lastSep = ""
+    csi: seq[AnsiData]
+    passedCsi: seq[AnsiData]
   for element in s:
     case element.kind:
     of CSI:
-      csi.add "\e[" & element.parameters & element.intermediate & $element.final
-      temp.add "\e[" & element.parameters & element.intermediate & $element.final
+      csi.add element
+      temp.add element
     of String:
       for word, isSep in tokenize(element.str, seps):
         let wlen = olen(word)
@@ -92,27 +94,27 @@ func wrapWords*(s: seq[AnsiData], maxLineWidth = 80,
             while i < word.len:
               if spaceLeft <= 0:
                 spaceLeft = maxLineWidth
-                result.add passedCsi & temp & "\e[0m"
+                result.add passedCsi & temp & endElem
                 passedCsi.add csi
                 reset csi
                 reset temp
               dec spaceLeft
               let L = graphemeLen(word, i)
-              for j in 0 ..< L: temp.add $word[i+j]
+              for j in 0 ..< L: temp.add AnsiData(kind: String, str: $word[i+j])
               inc i, L
           else:
             spaceLeft = maxLineWidth - wlen
-            result.add passedCsi & temp & "\e[0m"
+            result.add passedCsi & temp & endElem
             passedCsi.add csi
             reset csi
             reset temp
-            temp.add(word)
+            temp.add AnsiData(kind: String, str: word)
         else:
           spaceLeft = spaceLeft - wlen
-          temp.add(lastSep)
-          temp.add(word)
+          temp.add AnsiData(kind: String, str: lastSep)
+          temp.add AnsiData(kind: String, str: word)
           lastSep.setLen(0)
-  result.add passedCsi & temp & "\e[0m"
+  result.add passedCsi & temp & endElem
 
 template activePadding(): int =
   if i != part.high: table.padding else: 0
@@ -151,7 +153,7 @@ proc echoTable(table: TerminalTable) =
   var sizes = table.getColumnSizes
   for part in table.parts:
     var
-      wrapped = newSeq[seq[string]](part.len)
+      wrapped = newSeq[seq[seq[AnsiData]]](part.len)
       longest = 0
     for i in 0..part.high:
       wrapped[i] = part[i].wrapWords(sizes[i])
@@ -159,7 +161,7 @@ proc echoTable(table: TerminalTable) =
     for i in 0..<longest:
       for j, w in wrapped:
         if w.len > i:
-          stdout.write w[i].parseAnsi.ansiAlign(sizes[j])
+          stdout.write w[i].ansiAlign(sizes[j])
           if j != wrapped.high:
             stdout.write ' '.repeat table.padding
         else:
@@ -170,7 +172,7 @@ proc echoTable(table: TerminalTable) =
 
 when isMainModule:
   echo "Tim " & "-".repeat(123)
-  var table = TerminalTable(padding: 3)
+  var table = TerminalTable(padding: 1)
   #parts.add @[blue "Hello world", "this is aligned"]
   #parts.add @["Tim", red "this is also aligned"]
   #table.add "Timothy", red "Ronaldson", yellow "This is a really long message that should break the width of the terminal and cause a wrapping scenario, hopefully it works so I can test wrapping.", "Test"
