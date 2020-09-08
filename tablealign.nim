@@ -1,4 +1,6 @@
-import strutils, sequtils, ansiparse, terminal, math
+import sequtils, ansiparse, terminal, math, algorithm
+import unicode except repeat
+from strutils import Whitespace, tokenize, split, repeat, join
 
 import termstyle
 
@@ -56,71 +58,131 @@ proc `[]`(cell: seq[AnsiData], slice: Hslice[int, int]): string =
     result.setLen slice.b - slice.a + csiPassed + 1
     result &= "\e[0m"
 
+proc olen(s: string): int =
+  var i = 0
+  result = 0
+  while i < s.len:
+    inc result
+    let L = graphemeLen(s, i)
+    inc i, L
+
+func wrapWords*(s: seq[AnsiData], maxLineWidth = 80,
+               splitLongWords = true,
+               seps: set[char] = Whitespace): seq[string] =
+  var temp: string
+  var spaceLeft = maxLineWidth
+  var lastSep = ""
+  var
+    csi: string
+    passedCsi: string
+  for element in s:
+    case element.kind:
+    of CSI:
+      csi.add "\e[" & element.parameters & element.intermediate & $element.final
+      temp.add "\e[" & element.parameters & element.intermediate & $element.final
+    of String:
+      for word, isSep in tokenize(element.str, seps):
+        let wlen = olen(word)
+        if isSep:
+          lastSep = word
+          spaceLeft = spaceLeft - wlen
+        elif wlen > spaceLeft:
+          if splitLongWords and wlen > maxLineWidth:
+            var i = 0
+            while i < word.len:
+              if spaceLeft <= 0:
+                spaceLeft = maxLineWidth
+                result.add passedCsi & temp & "\e[0m"
+                passedCsi.add csi
+                reset csi
+                reset temp
+              dec spaceLeft
+              let L = graphemeLen(word, i)
+              for j in 0 ..< L: temp.add $word[i+j]
+              inc i, L
+          else:
+            spaceLeft = maxLineWidth - wlen
+            result.add passedCsi & temp & "\e[0m"
+            passedCsi.add csi
+            reset csi
+            reset temp
+            temp.add(word)
+        else:
+          spaceLeft = spaceLeft - wlen
+          temp.add(lastSep)
+          temp.add(word)
+          lastSep.setLen(0)
+  result.add passedCsi & temp & "\e[0m"
+
 template activePadding(): int =
   if i != part.high: table.padding else: 0
 
-proc echoTable(table: TerminalTable) =
-  var
-    sizes: seq[int]
-    spaces: seq[int]
+proc getColumnSizes(table: TerminalTable, maxSize = terminalWidth()): seq[int] =
   for part in table.parts:
     for i, cell in part:
-      if i == sizes.len:
-        sizes.add cell.pureLen
-        spaces.add cell.hasSpaces
+      if i == result.len:
+        result.add cell.pureLen
       else:
-        sizes[i] = max(sizes[i], cell.pureLen)
-        spaces[i] += cell.hasSpaces
-  echo sizes
-  echo spaces
-  let maxLen = terminalWidth()
-  echo maxLen
-  let totalSize = sizes.foldl(a + b) + table.padding * (sizes.len - 1)
-  echo totalSize
-  if totalSize > maxLen:
-    var splitableColumns = spaces.mapIt(min(1, it)).foldl(a + b)
-    echo ceil((totalSize - maxLen) / splitableColumns).int
-    if splitableColumns > 0:
-      for i, space in spaces:
-        if space > 0:
-          if sizes[i] <= ceil((totalSize - maxLen) / splitableColumns).int:
-            splitableColumns -= 1
-            spaces[i] = 0
-    echo ceil((totalSize - maxLen) / splitableColumns).int
-    if splitableColumns > 0:
-      for i, space in spaces:
-        if space > 0:
-          sizes[i] -= ceil((totalSize - maxLen) / splitableColumns).int
-      echo "Truncating"
-  echo sizes
+        result[i] = max(result[i], cell.pureLen)
+  let totalSize = result.foldl(a + b) + table.padding * (result.len - 1)
+  if totalSize > maxSize:
+    var newSizes = newSeq[tuple[val, i: int]](result.len)
+    for i, size in result:
+      newSizes[i] = (val: size, i: i)
+    newSizes.sort(SortOrder.Descending)
+    var
+      resized = 0
+      newSize = totalSize
+    for i in 0..<result.high:
+      newSize -= newSizes[i].val * (i+1)
+      newSize += newSizes[i+1].val * (i+1)
+      resized += 1
+      if newSize <= maxSize:
+        break
+    let extra = maxSize - newSize
+    if extra >= 0:
+      for i in 0..<resized:
+        result[newSizes[i].i] = newSizes[resized].val + extra div resized
+    else:
+      for i in 0..result.high:
+        result[i] = (maxSize - result.len * table.padding) div result.len
+
+proc echoTable(table: TerminalTable) =
+  var sizes = table.getColumnSizes
   for part in table.parts:
     var
-      columnsToWrite = part.len
-      line = 0
-    while columnsToWrite > 0:
-      for i, msg in part:
-        let textLen = msg.textLen()
-        if textLen <= sizes[i]:
-          if line == 0:
-            stdout.write msg.ansiAlign(sizes[i] + activePadding)
-            dec columnsToWrite
-          else:
-            stdout.write ' '.repeat(msg.toString(stripAnsi = true).alignLeft(sizes[i] + activePadding).len)
+      wrapped = newSeq[seq[string]](part.len)
+      longest = 0
+    for i in 0..part.high:
+      wrapped[i] = part[i].wrapWords(sizes[i])
+      longest = max(longest, wrapped[i].len)
+    for i in 0..<longest:
+      for j, w in wrapped:
+        if w.len > i:
+          stdout.write w[i].parseAnsi.ansiAlign(sizes[j])
+          if j != wrapped.high:
+            stdout.write ' '.repeat table.padding
         else:
-          let output = msg[line * sizes[i]..<(line + 1) * sizes[i]]# & ' '.repeat activePadding
-          stdout.write output.parseAnsi.ansiAlign(sizes[i] + activePadding)
-          if (line + 1) * sizes[i] >= msg.toString.len:
-            dec columnsToWrite
-      stdout.write "\n"
-      inc line
+          stdout.write ' '.repeat sizes[j]
+          if j != wrapped.high:
+            stdout.write ' '.repeat table.padding
+      stdout.write '\n'
 
 when isMainModule:
   echo "Tim " & "-".repeat(123)
-  var table = TerminalTable(padding: 1)
+  var table = TerminalTable(padding: 3)
   #parts.add @[blue "Hello world", "this is aligned"]
   #parts.add @["Tim", red "this is also aligned"]
   #table.add "Timothy", red "Ronaldson", yellow "This is a really long message that should break the width of the terminal and cause a wrapping scenario, hopefully it works so I can test wrapping.", "Test"
   table.add "Timothy", yellow "This is a really long message that should break the width of the terminal and cause a wrapping scenario, hopefully it works so I can test wrapping.", red "This is a really long message that should break the width of the terminal and cause a wrapping scenario, hopefully it works so I can test wrapping.", "Test"
   table.add blue "Ronaldson", green "This is a shorter message", "So is this", red "Last field that now includes a message long enough for this to be truncated"
   #parts.add @["Ralph", "Bob", "So is this"]
+
+
+
+
   table.echoTable()
+ # var ansiText = ("Lorem ipsum dolor sit amet, " & red("|consectetur adipiscing elit|") & ", sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. " & yellow("|Duis aute irure dolor in reprehenderit|") & " in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.").parseAnsi
+ # echo ansiText.wrapWords(50)
+ # for i in 1..50:
+ #   echo ansiText.wrapWords(i).join "\n"
