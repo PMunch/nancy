@@ -228,22 +228,27 @@ proc echoTable*(table: TerminalTable, maxSize = terminalWidth(), padding = 1) =
 when isMainModule:
   import termstyle
 
-  echo "Tim " & "-".repeat(123)
   var table: TerminalTable
-  table.add @[blue "Hello world", "this is aligned"]
-  table.add @["Tim", red "this is also aligned"]
-  table.add "Timothy", (yellow "This is a really long message that" & blue " should break the width of the terminal and cause a wrapping scenario, hopefully it works so I can test wrapping."), red "This is a really long message that should break the width of the terminal and cause a wrapping scenario, hopefully it works so I can test wrapping.", "Test"
-  table.add blue "Ronaldson", green "This is a shorter message", "So is this", red "Last field that now includes a message long enough for this to be truncated"
-  table.tabbed "This is a test\tTo see if tab delimited adding works\t\e[32mAlso supports colours!\e[0m"
+  table.add red "Lorem", blue "Lorem ipsum dolor sit amet," & bold(" consectetur adipiscing elit") & blue ", sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.", "Ut enim ad minim veniam"
+  table.add green "Ipsum"
+  table.add italic red "Dolor sit", "", underline "Ut enum ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat."
+  #table.add @[blue "Hello world", "this is aligned"]
+  #table.add @["Tim", red "this is also aligned"]
+  #table.add "Timothy", (yellow "This is a really long message that" & blue " should break the width of the terminal and cause a wrapping scenario, hopefully it works so I can test wrapping."), red "This is a really long message that should break the width of the terminal and cause a wrapping scenario, hopefully it works so I can test wrapping.", "Test"
+  #table.add blue "Ronaldson", green "This is a shorter message", "So is this", red "Last field that now includes a message long enough for this to be truncated"
+  #table.tabbed "This is a test\tTo see if tab delimited adding works\t\e[32mAlso supports colours!\e[0m"
 
-  table.echoTable(padding = 3)
+  table.echoTable(80)
   echo ""
   table.echoTableSeps(80, boxSeps)
   echo ""
   table.echoTableSeps(80)
   echo ""
-  table.echoTable(80)
+  table.echoTable(padding = 3)
+  echo ""
   table.echoTableSeps(seps = boxSeps)
+  echo ""
+  table.echoTableSeps()
   #for i in 60..80:
   #  echo '-'.repeat i
   #  table.echoTableSeps(i, boxSeps)

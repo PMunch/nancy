@@ -5,6 +5,7 @@ author        = "PMunch"
 description   = "Easiest way to print tables in your terminal with full ANSI support and custom style"
 license       = "MIT"
 srcDir        = "src"
+skipFiles     = "example.png"
 
 
 
