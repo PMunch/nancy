@@ -1,6 +1,6 @@
 # Package
 
-version       = "0.1.0"
+version       = "0.1.1"
 author        = "PMunch"
 description   = "Easiest way to print tables in your terminal with full ANSI support and custom style"
 license       = "MIT"
