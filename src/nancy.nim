@@ -183,7 +183,7 @@ const
     bottomMiddle: "┴", bottomRight: "┘", centerLeft: "├", centerMiddle: "┼",
     centerRight: "┤", vertical: "│", horizontal: "─")
 
-template printSeparator(position: untyped): untyped =
+template printSeparator*(position: untyped): untyped =
   stdout.write seps.`position Left`
   for i, size in sizes:
     stdout.write seps.horizontal.repeat(size + 2)
